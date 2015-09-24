@@ -10,7 +10,7 @@
 
 using namespace gnol;
 
-void convolve2d(const fmat &input, const fmat &kernel, fmat &output) {
+void convolve2d(const matrix_t &input, const matrix_t &kernel, matrix_t &output) {
     ssize_t<2> center({input.n_rows, input.n_cols});
     
     for (std::uint64_t i = 0; i < input.n_rows; i++) {

@@ -13,13 +13,18 @@
 #include <array>
 
 #include <boost/range.hpp>
+#include <boost/optional.hpp>
 
 #include <armadillo>
 
 namespace gnol {
     using namespace arma;
     
-    typedef std::list<boost::iterator_range<fmat::iterator>> parameter_list;
+    typedef mat matrix_t;
+    typedef vec vector_t;
+    typedef matrix_t::elem_type real_t;
+    
+    typedef std::list<boost::iterator_range<matrix_t::iterator>> parameter_list;
     
     extern parameter_list empty_parameter_list;
     
@@ -89,9 +94,9 @@ namespace gnol {
     public:
         size_t() {}
         
-        size_t(std::initializer_list<std::size_t> values) {
+        size_t(std::initializer_list<std::size_t> &values) {
             extent.resize(values.size());
-            copy(values.begin(), values.end(), extent.begin());
+            std::copy(values.begin(), values.end(), extent.begin());
         }
         
         template <std::size_t D>
@@ -105,23 +110,31 @@ namespace gnol {
             extent[0] = size;
         }
         
+        std::size_t num_elements() const {
+            return std::accumulate(extent.begin(), extent.end(), 0,
+               [](std::size_t a, std::size_t b) -> std::size_t {
+                   return a+b;
+               });
+        }
+        
         
         size_t &operator =(std::initializer_list<std::size_t> values) {
             extent.resize(values.size());
-            copy(values.begin(), values.end(), extent.begin());
+            std::copy(values.begin(), values.end(), extent.begin());
             return *this;
         }
         
         size_t &operator =(size_t &size) {
             extent.resize(size.dims());
-            copy(size.begin(), size.end(), extent.begin());
+            std::copy(size.begin(), size.end(), extent.begin());
             return *this;
         }
         
         std::size_t dims() const { return extent.size(); }
         std::size_t size() const { return extent.size(); }
         
-        std::size_t operator [](std::size_t index) { return extent[index]; }
+        std::size_t &operator [](std::size_t index) { return extent[index]; }
+        std::size_t operator [](std::size_t index) const { return extent[index]; }
         
         iterator begin() { return extent.begin(); }
         iterator end() { return extent.end(); }
@@ -153,6 +166,10 @@ namespace gnol {
     struct variable_storage {
         T *storage;
         
+        variable_storage(const size_t &size) {
+            storage = new T[size.num_elements()];
+        }
+        
         variable_storage(ssize_t<1> size) {
             storage = new T[size];
         }
@@ -176,116 +193,59 @@ namespace gnol {
         T *get() { return storage; }
     };
     
-    // get rid of and make variable templated by shared again?
-//    template <typename T>
-//    struct shared {
-//        T &var;
-//        
-//        shared(T &v): var(v) {}
-//        
-//        T &operator *() { return var; }
-//        T *operator ->() { return &var; }
-//    };
-    
-    /*
-     semantics:
-     x = share(y)
-     
-     f(share(x))
-     */
-    template <typename MatrixT> //, bool is_shared=false>
+    template <typename MatrixT>
     class variable {
     public:
         typedef typename MatrixT::elem_type element_t;
     protected:
         bool shared;
-        std::shared_ptr<variable_storage<element_t>> storage;
-        MatrixT value;
+        std::shared_ptr<MatrixT> value;
     protected:
         // used by shared variant
         variable(variable &v, bool):
             shared(true),
-            // use the same memory as the variable passed
-            storage(v.get_storage()),
-            value(storage->get(), v->n_rows, v->n_cols, false) {}
+            value(v.value) {}
     public:
-        // vector initialization (disable for matrices to avoid compile-time errors)
+        variable(const MatrixT &value):
+            shared(false),
+            value(std::make_shared<MatrixT>(value)) {}
+        
+        variable(MatrixT &&value):
+            shared(false),
+            value(std::make_shared<MatrixT>(value)) {}
+        
+        variable(variable &v):
+            shared(false),
+            value(v.value) {}
+        
+        variable(variable &&v):
+            shared(false),
+            value(v.value) {}
+        
+        variable(size_t size):
+            shared(false)
+        {
+            if (size.dims() == 1)
+                value = std::make_shared<MatrixT>(size[0], 1);
+            else
+                value = std::make_shared<MatrixT>(size[0], size[1]);
+        }
+        
         template<typename eT=element_t, typename std::enable_if<std::is_convertible<MatrixT,Col<eT>>::value>::type...>
         variable(ssize_t<1> size):
             shared(false),
-            storage(std::make_shared<variable_storage<element_t>>(size)),
-            value(storage->get(), size[0], false) {}
+            value(std::make_shared<MatrixT>(size[0])) {}
         
+        template<typename eT=element_t, typename std::enable_if<std::is_convertible<MatrixT,Mat<eT>>::value>::type...>
         variable(ssize_t<2> size):
             shared(false),
-            storage(std::make_shared<variable_storage<element_t>>(size)),
-            value(storage->get(), size[0], size[1], false) {}
+            value(std::make_shared<MatrixT>(size[0], size[1])) {}
         
-        variable(variable &v):
-            shared(v.shared),
-            storage(v.shared ? v.get_storage() : std::shared_ptr<variable_storage<element_t>>(new variable_storage<element_t>(v->n_rows, v->n_cols))),
-            value(storage->get(), v->n_rows, v->n_cols, false)
-        {
-            if (!shared) std::copy(v->begin(), v->end(), value.begin());
-        }
+        MatrixT &operator *() { return *value; }
+        std::shared_ptr<MatrixT> operator ->() { return value; }
         
-        variable(const variable &v):
-            shared(false),
-            storage(new variable_storage<element_t>(v->n_rows, v->n_cols)),
-            value(storage->get(), v->n_rows, v->n_cols, false)
-        {
-            std::copy(v->begin(), v->end(), value.begin());
-        }
-        
-        variable(variable &&v):
-            shared(v.shared),
-            storage(v.shared ? v.get_storage() : std::shared_ptr<variable_storage<element_t>>(new variable_storage<element_t>(v->n_rows, v->n_cols))),
-            value(storage->get(), v->n_rows, v->n_cols, false)
-        {
-            if (!shared) std::copy(v->begin(), v->end(), value.begin());
-        }
-
-        
-        variable(MatrixT &v):
-            shared(false),
-            storage(new variable_storage<element_t>(v.n_rows, v.n_cols)),
-            value(storage->get(), v.n_rows, v.n_cols, false)
-        {
-            std::copy(v.begin(), v.end(), value.begin());
-        }
-        
-//        variable(shared<variable> &&v):
-//            // use the same memory as the variable passed
-//            storage(v->get_storage()),
-//            value(storage->get(), (*v)->n_rows, (*v)->n_cols, false) {}
-        
-//        // constructor that is activated if we're not sharing
-//        template<bool s=is_shared, typename std::enable_if<s == false>::type * = nullptr>
-//        variable(variable &v):
-//            storage(new variable_storage<element_t>(v->n_rows, v->n_cols)),
-//            value(storage->get(), v->n_rows, v->n_cols, false)
-//        {
-//            std::copy(v->begin(), v->end(), value.begin());
-//        }
-//        
-//        // constructor that is activated if we are sharing
-//        // NB: the variable type is templated due to compiler issues of incompatible
-//        // types otherwise
-//        template<typename vT, bool s=is_shared, typename std::enable_if<s == true>::type * = nullptr>
-//        variable(vT &v):
-//            // use the same memory as the variable passed
-//            storage(v.get_storage()),
-//            value(storage->get(), v->n_rows, v->n_cols, false) {}
-        
-        std::shared_ptr<variable_storage<element_t>> get_storage() {
-            return storage;
-        }
-        
-        MatrixT &operator *() { return value; }
-        MatrixT *operator ->() { return &value; }
-        
-        const MatrixT &operator *() const { return value; }
-        const MatrixT *operator ->() const { return &value; }
+        const MatrixT &operator *() const { return *value; }
+        std::shared_ptr<const MatrixT> operator ->() const { return value; }
     };
     
     template <typename MatrixT>
@@ -293,23 +253,15 @@ namespace gnol {
     public:
         shared_variable(variable<MatrixT> &v):
             variable<MatrixT>(v, true) {}
-//            storage(v.get_storage()),
-//            value(storage->get(), (*v)->n_rows, (*v)->n_cols, false) {}
-
     };
-    
-//    template <typename T>
-//    shared<T> share(T &v) {
-//        return shared<T>(v);
-//    }
     
     template <typename MatrixT>
     shared_variable<MatrixT> share(variable<MatrixT> &v) {
         return shared_variable<MatrixT>(v);
     }
 
-    inline variable<fvec> make_vector(ssize_t<1> size) {
-        variable<fvec> tmp(size);
+    inline variable<vector_t> make_vector(ssize_t<1> size) {
+        variable<vector_t> tmp(size);
         return tmp;
     }
     
@@ -332,6 +284,8 @@ namespace gnol {
     ssize_t<sizeof...(Args)> size(Args...args) {
         return ssize_t<sizeof...(Args)>(make_array(args...));
     }
+    
+    vector_t concat(std::initializer_list<vector_t> &&lst);
 }
 
 #endif

@@ -51,11 +51,6 @@
                BlueprintName = "rnn Tests"
                ReferencedContainer = "container:rnn.xcodeproj">
             </BuildableReference>
-            <SkippedTests>
-               <Test
-                  Identifier = "LinearParams/SharedWeights">
-               </Test>
-            </SkippedTests>
          </TestableReference>
       </Testables>
       <MacroExpansion>

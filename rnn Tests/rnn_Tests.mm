@@ -26,6 +26,9 @@
 #import <gtest/gtest.h>
 #import <objc/runtime.h>
 
+#include <stdlib.h>
+#include <time.h>
+
 using testing::TestCase;
 using testing::TestInfo;
 using testing::TestPartResult;
@@ -170,6 +173,8 @@ static void RunTest(id self, SEL _cmd) {
  * observing the NSBundleDidLoadNotification for our own bundle.
  */
 + (void)load {
+    srand(time(NULL));
+    
     NSBundle *bundle = [NSBundle bundleForClass:self];
     [[NSNotificationCenter defaultCenter] addObserverForName:NSBundleDidLoadNotification object:bundle queue:nil usingBlock:^(NSNotification *notification) {
         [self registerTestClasses];

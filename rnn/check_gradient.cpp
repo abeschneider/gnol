@@ -7,45 +7,47 @@
 //
 
 #include "check_gradient.hpp"
+#include "criterion.hpp"
 
 //using namespace gnol;
 namespace gnol {
-    std::list<float> check_gradient(std::function<float (const fvec &)> fn,
+    std::list<real_t> check_gradient(std::function<real_t (const vector_t &)> fn,
                                     GradientModule &mod,
-                                    const fvec &input,
-                                    float eps)
+                                    const vector_t &input,
+                                    real_t eps)
     {
-        std::list<float> result;
-        
-        parameter_list params = mod.flatten_parameters();
-        parameter_list dparams = mod.flatten_deriv_parameters();
+        std::list<real_t> result;
         
         // calculate gradients
         fn(input);
+
+        // flatten out parameters so we can iterate over them below
+        parameter_list params = mod.flatten_parameters();
+        parameter_list dparams = mod.flatten_deriv_parameters();
         
-        // copy gradients (otherwise we'll affect them with the code below)
-        std::list<float> grad;
-        std::insert_iterator<std::list<float>> grad_insert(grad, grad.end());
-        for (auto &param : dparams) {
-            std::copy(param.begin(), param.end(), grad_insert);
+        // copy gradients to save the analytical solution
+        // (otherwise we'll affect them with the code below)
+        std::list<real_t> grad;
+        for (auto dparam : dparams) {
+            std::copy(dparam.begin(), dparam.end(), std::inserter(grad, grad.end()));
         }
         
         // perturb each parameter and evaluate fn()
         auto grad_pos = grad.begin();
         for (auto &param : params) {
             for (std::size_t i = 0; i < param.size(); i++) {
-                auto old_value = param[i];
+                real_t old_value = param[i];
                 param[i] += eps;
-                auto pvalue = fn(input);
+                real_t pvalue = fn(input);
+                
+                param[i] = old_value-eps;
+                real_t nvalue = fn(input);
                 param[i] = old_value;
                 
-                param[i] -= eps;
-                auto nvalue = fn(input);
-                param[i] = old_value;
-                
-                float numerical_diff = (pvalue - nvalue) / (2*eps);
-                float calc_diff = *grad_pos++;
-                float diff = fabs(numerical_diff - calc_diff);
+                real_t numerical_diff = (pvalue - nvalue) / (2*eps);
+                real_t analytical_diff = *grad_pos++;
+                real_t diff = fabs(numerical_diff - analytical_diff);
+
                 result.push_back(diff);
             }
         }

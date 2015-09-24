@@ -12,8 +12,9 @@
 #include <armadillo>
 
 #include <list>
-#include <initializer_list>
 #include <utility>
+
+#include <initializer_list>
 #include <boost/range.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 
@@ -21,32 +22,34 @@
 
 namespace gnol {
     using namespace arma;
-    
+        
     class Module {
     protected:
-        fmat output;
+        variable<matrix_t> output;
         size_t input_size, output_size;
     public:
         Module(size_t input_size, size_t output_size);
+        Module(ssize_t<1> input_size, ssize_t<1> output_size);
+        Module(ssize_t<2> input_size, ssize_t<2> output_size);
         
         size_t get_input_size() const { return input_size; }
         size_t get_output_size() const { return output_size; }
-        fmat &get_output() { return output; }
+        variable<matrix_t> &get_output() { return output; }
         
-        virtual fmat &forward(const fmat &input) = 0;
+        virtual matrix_t &forward(const matrix_t &input) = 0;
         virtual parameter_list flatten_parameters() = 0;
     };
     
     class GradientModule: public Module {
     protected:
-        fmat grad_input;
+        matrix_t grad_input;
     public:
         GradientModule(size_t input_size, size_t output_size);
         
-        fmat &get_grad_input() { return grad_input; }
+        matrix_t &get_grad_input() { return grad_input; }
         
         virtual void clear() { grad_input.zeros(); }
-        virtual fmat &backward(const fmat &input, const fmat &grad_output) = 0;
+        virtual matrix_t &backward(const matrix_t &input, const matrix_t &grad_output) = 0;
         virtual parameter_list flatten_deriv_parameters() = 0;
     };
         
@@ -77,12 +80,12 @@ namespace gnol {
             params(params),
             grad_params(grad_params) {}
         
-        fmat &forward(const fmat &input) {
-            op(params, input, output);
-            return output;
+        matrix_t &forward(const matrix_t &input) {
+            op(params, input, *output);
+            return *output;
         }
         
-        fmat &backward(const fmat &input, const fmat &grad_output) {
+        matrix_t &backward(const matrix_t &input, const matrix_t &grad_output) {
             grad(params, grad_params, input, grad_output, grad_input);
             return grad_input;
         }
@@ -92,11 +95,16 @@ namespace gnol {
         
         virtual parameter_list flatten_parameters() { return params.flatten(); }
         virtual parameter_list flatten_deriv_parameters() { return grad_params.flatten(); }
+        
+        virtual void clear() {
+            grad_input.zeros();
+            grad_params.clear();
+        }
     };
                 
     template <typename T, typename...Args>
     std::shared_ptr<T> make_module(Args...args) {
-        return std::make_shared<T>(args...);
+        return std::make_shared<T>(std::forward<Args>(args)...);
     }
 }
 

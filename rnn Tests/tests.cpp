@@ -17,31 +17,32 @@
 
 using namespace gnol;
 
-float distance(const fmat &a, const fmat &b) {
+real_t distance(const matrix_t &a, const matrix_t &b) {
     return as_scalar(sum(sum(sqrt(pow(a - b, 2)))));
 }
 
-bool is_close(const fmat &a, const fmat &b, float eps=10e-4) {
+bool is_close(const matrix_t &a, const matrix_t &b, real_t eps=10e-4) {
     return distance(a, b) < eps;
 }
 
-void test_gradient2(GradientModule &mod, float eps=10e-4) {
+void test_gradient2(GradientModule &mod, real_t eps=10e-4) {
     L2Loss loss;
     
-    fvec input;
-    
-    input.set_size(mod.get_input_size()[0]);
+    vector_t input(mod.get_input_size()[0]);
     input.randu();
     
-    fvec target(mod.get_output_size()[0]);
+    vector_t target(mod.get_output_size()[0]);
     target.randu();
     
-    auto eval_fn = [&mod, &loss, target](const fvec &x) -> float {
+    auto eval_fn = [&mod, &loss, target](const vector_t &x) -> real_t {
         // make sure we haven't accumlated any error yet
         mod.clear();
         
         auto result = mod.forward(x);
         auto error = loss.forward(result, target);
+        
+        // this is only needed for the analytical part, but it simplifies
+        // the code to keep everything together
         auto grad = loss.backward(result, target);
         mod.backward(x, grad);
         
@@ -49,37 +50,40 @@ void test_gradient2(GradientModule &mod, float eps=10e-4) {
     };
     
     auto result = check_gradient(eval_fn, mod, input, eps);
+    
+    // make sure we're not trying to check the gradient of a module with
+    // no parameters
     ASSERT_GT(result.size(), 0);
     
-    for (float val : result) {
-        ASSERT_LT(val, eps);
+    for (real_t val : result) {
+       ASSERT_LT(val, eps);
     }
 }
 
 TEST(variable, vector) {
-    variable<fvec> var(5);
+    variable<vector_t> var(5);
     var->ones();
     
-    fvec expected = {1.0, 1.0, 1.0, 1.0, 1.0};
+    vector_t expected = {1.0, 1.0, 1.0, 1.0, 1.0};
     ASSERT_TRUE(is_close(*var, expected));
 }
 
 TEST(variable, matrix) {
-    variable<fmat> var({5, 5});
+    variable<matrix_t> var(size(5, 5));
     var->ones();
     
-    fmat expected(5, 5);
+    matrix_t expected(5, 5);
     expected.fill(1.0);
     ASSERT_TRUE(is_close(*var, expected));
     
-    variable<fmat> var2(var);
+    variable<matrix_t> var2(var);
 }
 
 TEST(variable, shared_matrix) {
-    variable<fmat> var1({5, 5});
+    variable<matrix_t> var1(size(5, 5));
     
     // tell var2 to share the storage of var1
-    variable<fmat> var2(share(var1));
+    variable<matrix_t> var2(share(var1));
 
     // if we change var1, var2 should change
     var1->ones();
@@ -91,19 +95,19 @@ TEST(variable, shared_matrix) {
 }
 
 struct test_struct {
-    variable<fmat> var;
+    variable<matrix_t> var;
 
     
-    test_struct(variable<fmat> &v):
+    test_struct(variable<matrix_t> &v):
         var(std::move(v)) {}
 
-    test_struct(variable<fmat> &&v):
+    test_struct(variable<matrix_t> &&v):
         var(std::move(v)) {}
 };
 
 // test that if we use the move semantics the shared memory will be kept
 TEST(variable, shared_matrix2) {
-    variable<fmat> var({5, 5});
+    variable<matrix_t> var(size(5, 5));
     
     // test with l-value reference
     auto shared_var = share(var);
@@ -129,10 +133,10 @@ TEST(LinearModule, forward) {
     linear.get_params().weight->eye();
     linear.get_params().bias->zeros();
     
-    fvec input = {0.1, 0.2, 0.3};
+    vector_t input = {0.1, 0.2, 0.3};
     auto output = linear.forward(input);
     
-    fvec expected = {0.1, 0.2, 0.3, 0, 0};
+    vector_t expected = {0.1, 0.2, 0.3, 0, 0};
     ASSERT_TRUE(is_close(output, expected));
 }
 
@@ -144,18 +148,20 @@ TEST(LinearModule, Backward) {
     
     linear.clear();
     
-    fvec input = {0.1, 0.2, 0.3};
-    fvec grad_output = {1.0, 1.0, 1.0, 1.0, 1.0};
+    vector_t input = {0.1, 0.2, 0.3};
+    vector_t grad_output = {1.0, 1.0, 1.0, 1.0, 1.0};
     auto output = linear.forward(input);
     
     auto grad_input = linear.backward(input, grad_output);
     
-    fvec expected = {0.1, 0.1, 0.1};
+    vector_t expected = {0.1, 0.1, 0.1};
     ASSERT_TRUE(is_close(grad_input, expected));
 }
 
 TEST(LinearModule, GradCheck) {
-    LinearModule linear({3, 5});
+    LinearModule linear({100, 20});
+    
+//    for (std::size_t i = 0; i < 100; i++)
     test_gradient2(linear);
 }
 
@@ -168,8 +174,7 @@ TEST(SequenceModule, Initialize) {
 }
 
 TEST(SequenceModule, GradCheck) {
-    auto linear =
-    make_module<LinearModule>(size(3, 5));
+    auto linear = make_module<LinearModule>(size(3, 5));
     auto sigmoid = make_module<SigmoidModule>(5);
     
     SequenceModule seq({linear, sigmoid});
@@ -194,36 +199,30 @@ TEST(LinearModule, SharedWeights) {
     // create an auto-encoder with tied weights
     LinearModule encoder({3, 5});
     
-    // shared weight matrix
-    LinearParams params(share(encoder.get_params().weight),
-                        make_vector(encoder.get_params().weight->n_rows));
-    
-    // shared gradient weight matrix
-    LinearGradParams gparam(share(encoder.get_grad_params().weight),
-                            make_vector(encoder.get_grad_params().weight->n_rows));
-    
     // all ops will be transposed
-    TransposedLinearModule decoder(std::move(params), std::move(gparam));
+    TransposedLinearModule decoder(share(encoder.get_params().weight),
+                                   share(encoder.get_grad_params().weight));
 
     encoder.get_params().weight->eye();
     encoder.get_params().bias->zeros();
+    decoder.get_params().bias->zeros();
 
     // bias of decoder should be the size of the decoder's output
     ASSERT_EQ(decoder.get_params().bias->n_rows, decoder.get_output_size()[0]);
 
     // test forward direction
-    fvec input = {0.1, 0.2, 0.3};
+    vector_t input = {0.1, 0.2, 0.3};
     auto hidden = encoder.forward(input);
     auto output = decoder.forward(hidden);
     
-    fvec expected_hidden = {0.1, 0.2, 0.3, 0, 0};
-    fvec expected_output = {0.1, 0.2, 0.3};
+    vector_t expected_hidden = {0.1, 0.2, 0.3, 0, 0};
+    vector_t expected_output = {0.1, 0.2, 0.3};
         
     ASSERT_TRUE(is_close(hidden, expected_hidden));
     ASSERT_TRUE(is_close(output, expected_output));
     
     // test backward direction
-    fvec grad_output = {0.0, 0.0, 0.0};
+    vector_t grad_output = {0.0, 0.0, 0.0};
     auto grad_input1 = decoder.backward(hidden, grad_output);
     auto grad_input2 = encoder.backward(input, grad_input1);
 }
@@ -267,7 +266,7 @@ TEST(ReshapeModule, Forward) {
     SequenceModule seq({reshape, linear, sigmoid});
     
     // 2D data gets reshaped to 1D for linear layer
-    fmat data = {   {1, 2, 3},
+    matrix_t data = {   {1, 2, 3},
                     {4, 5, 6},
                     {7, 8, 9}};
     
@@ -285,7 +284,7 @@ TEST(ReshapeModule, GradCheck) {
 
 TEST(ConcatenateModule, Forward) {
     auto linear1 = make_module<LinearModule>(size(10, 5));
-    fmat eye1 = {
+    matrix_t eye1 = {
         {1, 0, 0, 0, 0},
         {0, 1, 0, 0, 0},
         {0, 0, 1, 0, 0},
@@ -298,7 +297,7 @@ TEST(ConcatenateModule, Forward) {
         {0, 0, 0, 0, 0}
     };
     
-    fmat eye2 = {
+    matrix_t eye2 = {
         {0, 0, 0, 0, 0},
         {0, 0, 0, 0, 0},
         {0, 0, 0, 0, 0},
@@ -320,7 +319,7 @@ TEST(ConcatenateModule, Forward) {
     
     ConcatModule concat({linear1, linear2});
 
-    fvec input = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    vector_t input = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     auto output = concat.forward(input);
     
     ASSERT_TRUE(is_close(output, input));
@@ -337,14 +336,14 @@ TEST(ConcatModule, Backward) {
 
     ConcatModule concat({linear1, linear2});
     
-    fvec input = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    vector_t input = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     auto output = concat.forward(input);
     
-    fvec grad_output(10); // = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    vector_t grad_output(10);
     grad_output.ones();
     auto grad_input = concat.backward(input, grad_output);
     
-    fvec expected = {2.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    vector_t expected = {2.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     ASSERT_TRUE(is_close(grad_input, expected));
 }
 
@@ -362,4 +361,54 @@ TEST(ConcatModule, GradCheck) {
     test_gradient2(concat);
 }
 
+TEST(JoinModule, Forward) {
+    auto linear1 = make_module<LinearModule>(size(10, 5));
+    linear1->get_params().weight->eye();
+    linear1->get_params().bias->zeros();
+    
+    auto linear2 = make_module<LinearModule>(size(10, 5));
+    linear2->get_params().weight->eye();
+    linear2->get_params().bias->zeros();
+    
+    JoinModule join({linear1, linear2});
+    
+    vector_t input = concat({{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+                             {10, 11, 12, 13, 14, 15, 16, 17, 18, 19}});
+    auto output = join.forward(input);
+    
+    vector_t expected = {0, 1, 2, 3, 4, 10, 11, 12, 13, 14};
+    ASSERT_TRUE(is_close(expected, output));
+}
 
+TEST(JoinModule, Backward) {
+    auto linear1 = make_module<LinearModule>(size(10, 5));
+    linear1->get_params().weight->eye();
+    linear1->get_params().bias->zeros();
+    
+    auto linear2 = make_module<LinearModule>(size(10, 5));
+    linear2->get_params().weight->eye();
+    linear2->get_params().bias->zeros();
+    
+    JoinModule join({linear1, linear2});
+    
+    vector_t input = concat({{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+                             {10, 11, 12, 13, 14, 15, 16, 17, 18, 19}});
+    auto output = join.forward(input);
+  
+    vector_t grad_output(10);
+    grad_output.ones();
+    auto grad_input = join.backward(input, grad_output);
+    
+    vector_t expected = concat({{1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                {1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0}});
+    ASSERT_TRUE(is_close(grad_input, expected));
+}
+
+TEST(JoinModule, GradCheck) {
+    auto linear1 = make_module<LinearModule>(size(10, 5));
+    auto linear2 = make_module<LinearModule>(size(10, 5));
+    
+    JoinModule join({linear1, linear2});
+
+    test_gradient2(join);
+}

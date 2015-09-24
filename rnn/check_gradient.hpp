@@ -9,7 +9,7 @@
 #ifndef __rnn__check_gradient__
 #define __rnn__check_gradient__
 
-#include "layer.hpp"
+#include "module.hpp"
 
 #include <list>
 #include <memory>
@@ -20,10 +20,10 @@
 #include "module.hpp"
 
 namespace gnol {
-    std::list<float> check_gradient(std::function<float (const fvec &)> fn,
+    std::list<real_t> check_gradient(std::function<real_t (const vector_t &)> fn,
                                     GradientModule &mod,
-                                    const fvec &input,
-                                    float eps);
+                                    const vector_t &input,
+                                    real_t eps);
 }
 
 #pragma GCC visibility pop

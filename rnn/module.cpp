@@ -12,8 +12,10 @@ using namespace gnol;
 
 Module::Module(size_t input_size, size_t output_size):
     input_size(input_size),
-    output_size(output_size) {}
-
+    output_size(output_size),
+    output(output_size)
+{
+}
 
 GradientModule::GradientModule(size_t input_size, size_t output_size):
     Module(input_size, output_size)

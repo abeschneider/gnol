@@ -15,8 +15,8 @@
 
 namespace gnol {
     struct LinearParams {
-        variable<fmat> weight;
-        variable<fvec> bias;
+        variable<matrix_t> weight;
+        variable<vector_t> bias;
         
         LinearParams(LinearParams &&params):
             weight(params.weight),
@@ -30,27 +30,36 @@ namespace gnol {
             bias->randu();
         }
         
-        LinearParams(variable<fmat> &w, variable<fvec> &b):
+        LinearParams(variable<matrix_t> &w, variable<vector_t> &b):
             weight(w),
-            bias(b) {}
+            bias(b)
+        {
+            bias->randu();
+        }
         
-        LinearParams(variable<fmat> &&w, variable<fvec> &&b):
+        LinearParams(variable<matrix_t> &&w, variable<vector_t> &&b):
             weight(w),
-            bias(b) {}
+            bias(b)
+        {
+            bias->randu();
+        }
         
-        LinearParams(fmat &w, fvec &b):
+        LinearParams(matrix_t &w, vector_t &b):
             weight(w),
-            bias(b) {}
+            bias(b)
+        {
+            bias->randu();
+        }
         
         
-        LinearParams(variable<fmat> &w):
+        LinearParams(variable<matrix_t> &w):
             weight(w),
             bias(w->n_rows)
         {
             bias->randu();
         }
         
-        LinearParams(variable<fmat> &&w):
+        LinearParams(variable<matrix_t> &&w):
             weight(w),
             bias(w->n_rows)
         {
@@ -62,8 +71,8 @@ namespace gnol {
     };
     
     struct LinearGradParams {
-        variable<fmat> weight;
-        variable<fvec> bias;
+        variable<matrix_t> weight;
+        variable<vector_t> bias;
         
         LinearGradParams(ssize_t<2> size):
             weight(size),
@@ -72,28 +81,28 @@ namespace gnol {
             clear();
         }
         
-        LinearGradParams(variable<fmat> &weight, variable<fvec> &bias):
+        LinearGradParams(variable<matrix_t> &weight, variable<vector_t> &bias):
             weight(weight),
             bias(bias)
         {
             clear();
         }
         
-        LinearGradParams(variable<fmat> &&weight, variable<fvec> &&bias):
+        LinearGradParams(variable<matrix_t> &&weight, variable<vector_t> &&bias):
             weight(weight),
             bias(bias)
         {
             clear();
         }
         
-        LinearGradParams(variable<fmat> &grad_weight):
+        LinearGradParams(variable<matrix_t> &grad_weight):
             weight(grad_weight),
             bias(grad_weight->n_rows)
         {
             clear();
         }
         
-        LinearGradParams(variable<fmat> &&grad_weight):
+        LinearGradParams(variable<matrix_t> &&grad_weight):
             weight(grad_weight),
             bias(grad_weight->n_rows)
         {
@@ -105,29 +114,40 @@ namespace gnol {
     };
     
     struct LinearOp {
-        void operator ()(LinearParams &params, const fmat &input, fmat &output) {
+        void operator ()(LinearParams &params, const matrix_t &input, matrix_t &output) {
             output = params.weight->t()*input + *params.bias;
         }
     };
     
     struct LinearGradient {
-        void operator ()(LinearParams &params, LinearGradParams &gparams, const fmat &input, const fmat &grad_output, fmat &grad_input) {
-            *gparams.weight += input*grad_output.t();
+        void operator ()(LinearParams &params, LinearGradParams &gparams, const matrix_t &input, const matrix_t &grad_output, matrix_t &grad_input) {
+            *gparams.weight += (grad_output*input.t()).t();
             *gparams.bias += grad_output;
             grad_input += *(params.weight)*grad_output;
         }
     };
     
-    typedef ParameterizedModule<LinearOp, LinearParams, LinearGradient, LinearGradParams> LinearModule;
+//    typedef ParameterizedModule<LinearOp, LinearParams, LinearGradient, LinearGradParams> LinearModule;
+    struct LinearModule: public ParameterizedModule<LinearOp, LinearParams, LinearGradient, LinearGradParams> {
+    public:
+        LinearModule(ssize_t<2> size):
+            ParameterizedModule(size)
+        {
+//            output.resize(params.weight->n_rows);
+        }
+        
+        LinearModule(LinearParams &&params, LinearGradParams &&grad_params);        
+        LinearModule(variable<matrix_t> &weight, variable<matrix_t> &grad_weight);
+    };
     
     struct TransposedLinearOp {
-        void operator ()(LinearParams &params, const fmat &input, fmat &output) {
+        void operator ()(LinearParams &params, const matrix_t &input, matrix_t &output) {
             output = (*params.weight)*input + *params.bias;
         }
     };
     
     struct TransposedLinearGradient {
-        void operator ()(LinearParams &params, LinearGradParams &gparams, const fmat &input, const fmat &grad_output, fmat &grad_input) {
+        void operator ()(LinearParams &params, LinearGradParams &gparams, const matrix_t &input, const matrix_t &grad_output, matrix_t &grad_input) {
             *gparams.weight += (input*grad_output.t()).t(); // TODO: simplify
             *gparams.bias += grad_output;
             grad_input += params.weight->t()*grad_output;
@@ -138,10 +158,8 @@ namespace gnol {
     public:
         TransposedLinearModule(LinearParams &&params,
                                LinearGradParams &&grad_params):
-            ParameterizedModule(LinearParams(std::move(params.weight),
-                                             make_vector(params.weight->n_rows)),
-                                LinearGradParams(std::move(grad_params.weight),
-                                                 make_vector(grad_params.weight->n_rows)),
+            ParameterizedModule(LinearParams(std::move(params.weight)),
+                                LinearGradParams(std::move(grad_params.weight)),
                                 {params.weight->n_cols, params.weight->n_rows}) {}
     };
 }

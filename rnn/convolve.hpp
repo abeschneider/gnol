@@ -12,10 +12,10 @@
 #include "module.hpp"
 
 namespace gnol {
-    void convolve2d(const fmat &input, const fmat &kernel, fmat &output);
+    void convolve2d(const matrix_t &input, const matrix_t &kernel, matrix_t &output);
 
     struct Convolve2DParams {
-        variable<fmat> kernel;
+        variable<matrix_t> kernel;
         
         parameter_list flatten() {
             parameter_list params = {
@@ -27,7 +27,7 @@ namespace gnol {
     };
 
     struct Convolve2DGradParams {
-        variable<fmat> kernel;
+        variable<matrix_t> kernel;
         
         Convolve2DGradParams(ssize_t<2> size):
         kernel(size)
@@ -35,13 +35,13 @@ namespace gnol {
             clear();
         }
         
-        Convolve2DGradParams(variable<fmat> &kernel):
+        Convolve2DGradParams(variable<matrix_t> &kernel):
         kernel(kernel)
         {
             clear();
         }
         
-        Convolve2DGradParams(variable<fmat> &&kernel):
+        Convolve2DGradParams(variable<matrix_t> &&kernel):
         kernel(kernel)
         {
             clear();
@@ -61,13 +61,13 @@ namespace gnol {
     };
 
     struct Convolve2DTransform {
-        void operator()(Convolve2DParams &params, const fmat &input, fmat &output) {
+        void operator()(Convolve2DParams &params, const matrix_t &input, matrix_t &output) {
             convolve2d(input, *params.kernel, output);
         }
     };
 
     struct Convolve2DGradient {
-        void operator ()(Convolve2DParams &params, Convolve2DGradParams &gparams, const fmat &input, const fmat &grad_output, fmat &grad_input) {
+        void operator ()(Convolve2DParams &params, Convolve2DGradParams &gparams, const matrix_t &input, const matrix_t &grad_output, matrix_t &grad_input) {
             //            *gparams.weight += input*grad_output.t();
             //            *gparams.bias += grad_output;
             //            grad_input += *(params.weight)*grad_output;
